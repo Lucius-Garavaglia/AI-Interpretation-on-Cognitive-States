@@ -354,7 +354,7 @@ class EEGPreprocessor:
     # ==========================================
     
     def load_physiological(self, subject_id, experiment="Experiment_1",
-                           sensors=['EDA', 'HR']):
+                           sensors=['EDA', 'HR', 'TEMP', 'BVP']):
         """Load Empatica wristband data (heart rate, skin conductance, etc.)."""
         physio_data = {}
         
@@ -387,9 +387,15 @@ class EEGPreprocessor:
                 mask = (timestamps >= eeg_window_start) & (timestamps <= eeg_window_end)
                 window_values = values[mask]
                 
-                features.append(float(np.mean(window_values)) if len(window_values) > 0 else 0.0)
+                if len(window_values) > 0:
+                    features.append(float(np.mean(window_values)))
+                    # Add variance for everything except TEMP
+                    if 'TEMP' not in name:
+                        features.append(float(np.std(window_values)))
+                else:
+                    features.extend([0.0, 0.0] if 'TEMP' not in name else [0.0])
             except Exception:
-                features.append(0.0)
+                features.extend([0.0, 0.0] if 'TEMP' not in name else [0.0])
         
         return np.array(features, dtype=np.float32)
     
