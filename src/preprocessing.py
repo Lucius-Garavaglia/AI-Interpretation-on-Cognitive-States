@@ -375,27 +375,36 @@ class EEGPreprocessor:
         
         return physio_data
     
-    def extract_physio_features(self, physio_data, eeg_window_start, eeg_window_end):
-        """Extract mean values of physiological signals during an EEG window."""
+    def extract_physio_features(self, physio_data, eeg_window_start, eeg_window_end, eeg_start_time):
+        """Extract mean values of physiological signals during an EEG window using relative time alignment."""
         features = []
+        
+        # Calculate how many seconds into the experiment this window occurred
+        relative_start = eeg_window_start - eeg_start_time
+        relative_end = eeg_window_end - eeg_start_time
         
         for name, df in physio_data.items():
             try:
                 timestamps = df.iloc[:, 0].values
+                # Get the wristband's starting clock time
+                physio_start_time = timestamps[0] 
+                
+                # Map the relative window to the wristband's specific clock
+                mapped_start = physio_start_time + relative_start
+                mapped_end = physio_start_time + relative_end
+                
                 values = df.iloc[:, 1].values if df.shape[1] > 1 else df.iloc[:, 0].values
                 
-                mask = (timestamps >= eeg_window_start) & (timestamps <= eeg_window_end)
+                # Use the newly mapped timestamps for the mask
+                mask = (timestamps >= mapped_start) & (timestamps <= mapped_end)
                 window_values = values[mask]
                 
                 if len(window_values) > 0:
                     features.append(float(np.mean(window_values)))
-                    # Add variance for everything except TEMP
-                    if 'TEMP' not in name:
-                        features.append(float(np.std(window_values)))
                 else:
-                    features.extend([0.0, 0.0] if 'TEMP' not in name else [0.0])
+                    features.append(0.0)
             except Exception:
-                features.extend([0.0, 0.0] if 'TEMP' not in name else [0.0])
+                features.append(0.0)
         
         return np.array(features, dtype=np.float32)
     
@@ -471,7 +480,12 @@ class EEGPreprocessor:
             if use_physio and len(physio_data) > 0:
                 window_start = eeg_window.iloc[0, 0]
                 window_end = eeg_window.iloc[-1, 0]
-                physio_feats = self.extract_physio_features(physio_data, window_start, window_end)
+                eeg_start_time = eeg_df.iloc[0, 0] # Get the very first EEG timestamp
+                
+                # Pass the eeg_start_time to align the clocks
+                physio_feats = self.extract_physio_features(
+                    physio_data, window_start, window_end, eeg_start_time
+                )
                 combined = np.concatenate([eeg_feats, physio_feats])
             else:
                 combined = eeg_feats
@@ -517,7 +531,7 @@ if __name__ == "__main__":
     all_subjects = []
     
     for subject in subjects:
-        X, y, trial_df = preprocessor.process_subject(subject, "Experiment_1", use_physio=False)
+        X, y, trial_df = preprocessor.process_subject(subject, "Experiment_1", use_physio=True)
         
         if X is not None and len(X) > 0:
             all_X.append(X)
